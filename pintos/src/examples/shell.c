@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
     }
     
     /* Interactive mode */
-    printf("Shell starting...\n");
+    //printf("Shell starting...\n");
     
     for (;;) {
         char command[80];
