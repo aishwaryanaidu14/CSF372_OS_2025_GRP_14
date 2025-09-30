@@ -90,6 +90,12 @@ struct thread
     int priority;                       /**< Priority. */
     struct list_elem allelem;           /**< List element for all threads list. */
 
+    /*9999*/
+    int base_priority;                 
+    struct list locks_held;            
+    struct lock *lock_waiting_on;       
+   /*9999*/
+
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /**< List element. */
     struct list *fd_list; 
@@ -139,5 +145,12 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/*9999*/
+void thread_yield_to_higher_priority(void);
+void thread_donate_priority(struct thread* t);
+bool thread_cmp_priority(const struct list_elem* a, const struct list_elem* b, void* aux);
+void thread_update_priority(struct thread* t);
+/*9999*/
 
 #endif /**< threads/thread.h */
