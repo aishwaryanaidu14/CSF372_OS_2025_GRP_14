@@ -71,6 +71,68 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/*9999*/
+bool thread_cmp_priority(const struct list_elem *a, const struct list_elem *b, void *aux){
+    struct thread *thread_a = list_entry(a, struct thread, elem);
+    struct thread *thread_b = list_entry(b, struct thread, elem);
+    return thread_a->priority > thread_b->priority;
+}
+
+void thread_yield_to_higher_priority(void){
+    if (list_empty(&ready_list))
+        return;
+    
+    struct thread *cur = thread_current();
+    struct thread *front = list_entry(list_front(&ready_list), struct thread, elem);
+    
+    if (front->priority > cur->priority)
+        thread_yield();
+}
+
+void thread_update_priority(struct thread *t){
+    // if (list_empty(&t->locks_held))
+    // {
+    //     t->priority = t->base_priority;
+    //     return;
+    // }
+    
+    // /* Find max priority among locks held (we'll implement this fully in Phase 3) */
+    // t->priority = t->base_priority;
+    
+    // struct list_elem *e;
+    // for (e = list_begin(&t->locks_held); e != list_end(&t->locks_held); e = list_next(e))
+    // {
+    //     struct lock *lock = list_entry(e, struct lock, elem);
+    //     if (lock->max_priority > t->priority)
+    //         t->priority = lock->max_priority;
+    // }
+    /*9999*/
+    int max_priority = t->base_priority;
+    struct list* locks=&t->locks_held;
+    if (list_size(locks)>0){
+        struct list_elem *e=list_begin(locks);
+        while(e!=list_end(locks)){
+          struct lock *lock = list_entry(e, struct lock, elem);
+            struct list* waiting_list=&lock->semaphore.waiters;
+            if (list_size(waiting_list)>0){
+                struct list_elem *we=list_begin(waiting_list);
+                while(we!=list_end(waiting_list)){
+                  struct thread *waiter=list_entry(we, struct thread, elem);
+                  if(max_priority<waiter->priority )
+                      max_priority=waiter->priority;
+                  we=list_next(we);
+                }
+            }
+          e=list_next(e);
+        }
+    }
+    t->priority=max_priority;
+    /*9999*/
+}
+/*9999*/
+
+
+
 /** Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -201,6 +263,10 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  /*9999*/
+  thread_yield_to_higher_priority();
+  /*9999*/
+
   return tid;
 }
 
@@ -237,7 +303,9 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  /*9999*/
+  list_insert_ordered(&ready_list, &t->elem, thread_cmp_priority, NULL);
+  /*9999*/
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -307,8 +375,11 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread){
+    /*9999*/
+    list_insert_ordered(&ready_list, &cur->elem, thread_cmp_priority, NULL);      
+    /*9999*/
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -335,7 +406,11 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+    /*9999*/
+    thread_current()->base_priority=new_priority;
+    thread_update_priority(thread_current());
+    thread_yield_to_higher_priority();
+    /*9999*/
 }
 
 /** Returns the current thread's priority. */
@@ -462,6 +537,13 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+
+  /*9999*/
+  list_init(&t->locks_held);
+  t->base_priority=priority;                 
+  t->lock_waiting_on=NULL;             
+  /*9999*/
+
   t->magic = THREAD_MAGIC;
   t->next_fd = 2; // after stdin and stdout
 
