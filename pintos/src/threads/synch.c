@@ -61,14 +61,15 @@ void
 sema_down (struct semaphore *sema) 
 {
   enum intr_level old_level;
-
-  ASSERT (sema != NULL);
-  ASSERT (!intr_context ());
-
+ASSERT (!intr_context ());
+  ASSERT(sema != NULL);
   old_level = intr_disable ();
-  while (sema->value == 0) 
-    {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
+  while (sema->value == 0){
+      /*9999*/
+      struct list_elem* curr_thread_elem=&thread_current()->elem;
+      struct list* waiting=&sema->waiters;
+      list_insert_ordered(waiting, curr_thread_elem, thread_cmp_priority, NULL);
+      /*9999*/
       thread_block ();
     }
   sema->value--;
@@ -113,9 +114,13 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  struct list* waiting=&sema->waiters;
+  if (!list_empty (waiting)) {
+    /*9999*/
+    list_sort(waiting, thread_cmp_priority, NULL);
+    /*9999*/
+    thread_unblock (list_entry (list_pop_front (waiting), struct thread, elem));
+  }
   sema->value++;
   intr_set_level (old_level);
 }
@@ -176,8 +181,10 @@ void
 lock_init (struct lock *lock)
 {
   ASSERT (lock != NULL);
-
   lock->holder = NULL;
+  /*9999*/
+  lock->max_priority=PRI_MIN;
+  /*9999*/
   sema_init (&lock->semaphore, 1);
 }
 
@@ -189,15 +196,47 @@ lock_init (struct lock *lock)
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
-void
-lock_acquire (struct lock *lock)
-{
+void nested_priority_donation(struct thread* t, int max_depth){
+            int depth=0;
+            while (t->lock_waiting_on!=NULL&&depth<max_depth){
+                struct lock *next_lock=t->lock_waiting_on;
+                if(next_lock->holder==NULL||next_lock->holder->priority>t->priority){
+                    break;
+                }
+                next_lock->holder->priority=t->priority;
+                t=next_lock->holder;
+            }
+}
+
+void lock_acquire (struct lock *lock){
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  /*9999*/
+  //sema_down (&lock->semaphore);
+  //lock->holder = thread_current ();
+    struct thread *current_thread=thread_current();
+    enum intr_level initial_level=intr_disable();
+    if (lock->holder!=NULL){
+        current_thread->lock_waiting_on=lock;
+        struct thread *t=lock->holder;
+        if (t->priority<current_thread->priority){
+            t->priority=current_thread->priority;
+            int max_depth=8;
+            nested_priority_donation(t,8);
+        }
+    }
+    intr_set_level(initial_level);
+    sema_down(&lock->semaphore);
+    initial_level=intr_disable();
+    current_thread->lock_waiting_on=NULL;
+    lock->holder=current_thread;
+    list_push_back(&current_thread->locks_held, &lock->elem);
+    intr_set_level(initial_level);
+  /*9999 */
+
+
 }
 
 /** Tries to acquires LOCK and returns true if successful or false
@@ -225,14 +264,23 @@ lock_try_acquire (struct lock *lock)
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
-void
-lock_release (struct lock *lock) 
-{
-  ASSERT (lock != NULL);
-  ASSERT (lock_held_by_current_thread (lock));
-
-  lock->holder = NULL;
-  sema_up (&lock->semaphore);
+void lock_release (struct lock *lock) {
+    ASSERT (lock != NULL);
+    ASSERT (lock_held_by_current_thread (lock));
+    struct thread* current_thread=thread_current();
+    struct semaphore* current_semaphore=&lock->semaphore;
+    /*9999*/
+    //lock->holder = NULL;
+    //sema_up (&lock->semaphore);
+    enum intr_level old_level=intr_disable();
+    list_remove(&lock->elem);
+    lock->holder=NULL;
+    lock->max_priority=PRI_MIN;
+    thread_update_priority(current_thread);
+    intr_set_level(old_level);  
+    sema_up (current_semaphore);
+    thread_yield_to_higher_priority();
+    /*9999*/
 }
 
 /** Returns true if the current thread holds LOCK, false
