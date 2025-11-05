@@ -506,6 +506,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         return false;
       if (page_read_bytes > 0) 
         {
+          /*9999*/
+          p->private=true;
+          /*9999*/
           p->file = file;
           p->file_offset = ofs;
           p->file_bytes = page_read_bytes;

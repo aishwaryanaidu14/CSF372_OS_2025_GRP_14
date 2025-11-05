@@ -53,8 +53,13 @@ page_for_addr (const void *address)
           needed for a PUSHA command) of the stack pointers, we assume that the address is valid. In that
           case, we should allocate one more stack page accordingly.
       */
-
-  return NULL;
+  /*9999*/
+  struct page p;
+  p.addr=pg_round_down(address);
+  struct hash_elem *e=hash_find(thread_current()->pages, &p.hash_elem);
+  if(e==NULL) return NULL;
+  return hash_entry(e, struct page, hash_elem);
+  /*9999*/
 }
 
 /* Locks a frame for page P and pages it in.
@@ -76,13 +81,18 @@ do_page_in (struct page *p)
   else if (p->file != NULL)
     {
       /* Get data from file. */
+      /*9999*/
+      off_t bytes_to_read = PGSIZE;
+      if (p->file_bytes > 0 && p->file_bytes <= PGSIZE)
+        bytes_to_read = p->file_bytes;
       off_t read_bytes = file_read_at (p->file, p->frame->base,
-                                        p->file_bytes, p->file_offset);
+                                        bytes_to_read, p->file_offset);
       off_t zero_bytes = PGSIZE - read_bytes;
       memset (p->frame->base + read_bytes, 0, zero_bytes);
-      if (read_bytes != p->file_bytes)
+      if (read_bytes != bytes_to_read)
         printf ("bytes read (%"PROTd") != bytes requested (%"PROTd")\n",
-                read_bytes, p->file_bytes);
+                read_bytes, bytes_to_read);
+      /*9999*/
     }
   else
     {
@@ -150,10 +160,11 @@ page_out (struct page *p)
   dirty = pagedir_is_dirty (p->thread->pagedir, (const void *) p->addr);
 
   /* If the frame is not dirty (and file != NULL), we have sucsessfully evicted the page. */
-  if(!dirty)
+  /*9999*/
+  if(!dirty&&p->file!=NULL)
   {
     ok = true;
-  }
+  }/*9999*/
   
   /* If the file is null, we definitely don't want to write the frame to disk. We must swap out the
      frame and save whether or not the swap was successful. This could overwrite the previous value of
@@ -185,6 +196,7 @@ page_out (struct page *p)
   {
     p->frame = NULL;
   }
+  
   return ok;
 }
 
@@ -211,7 +223,25 @@ page_accessed_recently (struct page *p)
 struct page *
 page_allocate (void *vaddr, bool read_only)
 {
-
+  /*9999*/
+  struct thread *t=thread_current();
+  struct page *p=malloc(sizeof *p);
+  if(p==NULL) return NULL;
+  p->addr=pg_round_down(vaddr);
+  p->read_only=read_only;
+  p->frame=NULL;
+  p->thread=t;
+  p->sector=(block_sector_t)-1;
+  p->private=false;
+  p->file_offset=0;
+  p->file_bytes=0;
+  p->file=NULL;
+  if(hash_insert(t->pages, &p->hash_elem)!=NULL){
+    free(p);
+    return NULL;
+  }
+  return p;
+  /*9999*/
 }
 
 /* Evicts the page containing address VADDR
@@ -225,6 +255,15 @@ page_deallocate (void *vaddr)
    - Lookup page with page_for_address()
    - If found, remove from hash (inside lock) and free()
 */
+/*9999*/
+  void *page_addr=pg_round_down(vaddr);
+  struct page *p=page_for_addr(page_addr);
+  if(p==NULL) return;
+  frame_lock(p);
+  if(p->frame!=NULL) frame_free(p->frame);
+  hash_delete(thread_current()->pages, &p->hash_elem);
+  free(p);
+/*9999*/
 }
 
 /* Returns a hash value for the page that E refers to. */

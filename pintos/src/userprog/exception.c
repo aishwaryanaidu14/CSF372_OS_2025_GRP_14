@@ -5,6 +5,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "vm/page.h"
+#include "threads/vaddr.h"  
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -154,6 +155,21 @@ page_fault (struct intr_frame *f)
        - Evict pages if needed
        - Return to user if successful
     */
+
+   /*9999*/
+   user=(f->error_code&PF_U)!=0;
+   not_present=(f->error_code&PF_P)==0;
+   write=(f->error_code&PF_W)!=0;
+   page_fault_cnt++;
+   if(user&&not_present&&fault_addr<PHYS_BASE){
+      if(page_in(fault_addr)) return;  
+      void *esp=f->esp;
+      if(fault_addr>=esp-32&&fault_addr>=PHYS_BASE-(1024*1024)){
+         struct page *p=page_allocate(pg_round_down(fault_addr), false);
+         if(p!=NULL&&page_in(fault_addr)) return;
+      }
+   }
+   /*9999*/
 
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
